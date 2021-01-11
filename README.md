@@ -1,0 +1,1 @@
+q(emu)VM is TUI wrapper around Qemu/KVM hypervisor based on dialog tool. This handy tool could be treated as an alternative for VirtualBox/VMware/etc UIs. The main goal is to simplify the management of Qemu instances.
