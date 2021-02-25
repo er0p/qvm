@@ -1,6 +1,7 @@
 #!/bin/sh
 
-QVM_PARSER=/home/er0p/wrk/src/qvm/qvm-conf-parser.py
+SCRIPTPATH=$(dirname `realpath $0`)
+QVM_PARSER=${SCRIPTPATH}/qvm-conf-parser.py
 
 get_ssh_free_port() {
 	ssh_port=""
