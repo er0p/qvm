@@ -326,9 +326,15 @@ qvm_action() {
 					;;
 				attach_ssh)
 					if [ "$(qvm_check_state `cat $selected_vm_file`)" = "working" ] ; then
+						
+						VM=$(cat $selected_vm_file)
+						ssh_user=$($QVM_PARSER --keyvalue $VM ssh_user)
+						if [ $? -ne 0 ] ; then
+							ssh_user="root"
+						fi
 						ssh_port=$(get_vm_ssh_port)
 						echo "ssh_port=$ssh_port"
-						ssh -i ~/.ssh/id_rsa_qvm -p $ssh_port root@127.0.0.1 
+						ssh -i ~/.ssh/id_rsa_qvm -p $ssh_port $ssh_user@127.0.0.1 
 					else
 						#qvm_message_box "VM "`cat $selected_vm_file | tr '\n' ' '`" isn't running" 
 						exit 1

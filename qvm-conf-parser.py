@@ -12,11 +12,12 @@ except ImportError:
 
 
 
-def print_vm_cmdline(configparser, vm_name):
-    qvm_sects = configparser.sections()
+def print_vm_cmdline(config, vm_name):
+    qvm_sects = config.sections()
     qvm_args=list()
     if vm_name in qvm_sects:
-        qvm_args = configparser.items(vm_name)
+        qvm_args = config.items(vm_name)
+        qvm_args.pop(0)
         #qemu type MUST be located first in VM section
         qemu_type = qvm_args[0][1]
         qvm_args.pop(0)
@@ -29,14 +30,25 @@ def print_vm_cmdline(configparser, vm_name):
         print("qVM %s doesn't exist in configfile" % vm_name);
         sys.exit(errno.ENOENT)
 
-def print_available_vms(configparser):
+def print_available_vms(config):
    # for x in config.sections():
    #    if x != 'global':
    #       print(x)
     print( '\n'.join([ x for x in config.sections() if x != 'global' ]))
     sys.exit()
 
-
+def print_value_by_vm_n_key(config, keys):
+    vm_name = keys[0]
+    key     = keys[1]
+    value=""
+    err=0
+    try:
+        value =  config[vm_name][key]
+        print(value)
+    except KeyError:
+        print("No such keyvalue")
+        err=errno.ENOENT
+    sys.exit(err)
 
 parser = argparse.ArgumentParser(description='Parse qVM config for constructing QEMU cmdline.')
 #parser.add_argument('integers', metavar='N', type=int, nargs='+',
@@ -44,9 +56,10 @@ parser = argparse.ArgumentParser(description='Parse qVM config for constructing 
 #parser.add_argument('--sum', dest='accumulate', action='store_const',
 #                    const=sum, default=max,
  #                   help='sum the integers (default: find the max)')
-parser.add_argument('-l', '--list', action='store_true', help="lists VMs from config file")
-parser.add_argument('-g', '--get', nargs='+',  help="constructs QEMU cmdline from given VM name")
-parser.add_argument('-s', '--set', nargs='+',  help="saves QEMU cmdline to new VM name as section")
+parser.add_argument('-l', '--list', action='store_true', help="list VMs from config file")
+parser.add_argument('-g', '--get', nargs=1, metavar='qVM_name', help="construct QEMU cmdline from given VM name")
+parser.add_argument('-s', '--set', nargs=1, metavar='qVM_name', help="save QEMU cmdline to new VM name as section")
+parser.add_argument('-k', '--keyvalue',  nargs=2, help="get value by key of given VM, e.g. --keyvalue vm0 ssh_user", dest='keys')
 
 args = parser.parse_args()
 config = ConfigParser()
@@ -54,9 +67,10 @@ config.read(os.path.expanduser('~/.qvm.conf'))
 
 if args.list:
     print_available_vms(config)
-    
-if args.get:
+elif args.get:
     print_vm_cmdline(config, args.get[0])
+elif args.keys:
+    print_value_by_vm_n_key(config, args.keys)
 #if len(sys.argv) > 2:
 #    vm_name = sys.argv[1]
 #else:
@@ -66,11 +80,6 @@ if args.get:
 # instantiate
 
 # parse existing file
-vm_name = "123"
-
-
-
-
 
 #print(qvm_sects)
 
