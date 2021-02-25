@@ -1,5 +1,6 @@
 #!/bin/sh
 
+QVM_PARSER=/home/er0p/wrk/src/qvm/qvm-conf-parser.py
 
 get_ssh_free_port() {
 	ssh_port=""
@@ -33,10 +34,10 @@ get_vnc_free_port() {
 
 bridge_create() {
 	local BRIDGE="$1"
-	sudo ip link show $BRIDGE 
+	ip link show $BRIDGE 
 	if [ $? -ne 0 ] ; then
-		sudo ip link add name $BRIDGE type bridge
-		sudo ip link set $BRIDGE up
+		ip link add name $BRIDGE type bridge
+		ip link set $BRIDGE up
 	else
 		echo "bridge $BRIDGE already exists"
 	fi
@@ -44,9 +45,9 @@ bridge_create() {
 
 bridge_destroy() {
 	local BRIDGE="$1"
-	sudo ip link show $BRIDGE 
+	ip link show $BRIDGE 
 	if [ $? -ne 0 ] ; then
-		sudo ip link del name $BRIDGE type bridge
+		ip link del name $BRIDGE type bridge
 	else
 		echo "bridge $BRIDGE doen't exist"
 	fi
@@ -57,20 +58,20 @@ tapm_up()
 	local TAP="$1"
 	local BRIDGE="$2"
 
-	sudo ip tuntap add "$TAP" mode tap
-	sudo ip link set "$TAP" promisc on
-	sudo ip link set "$TAP" up
-	sudo ip link set "$TAP" master "$BRIDGE"
+	ip tuntap add "$TAP" mode tap
+	ip link set "$TAP" promisc on
+	ip link set "$TAP" up
+	ip link set "$TAP" master "$BRIDGE"
 }
 
 tapm_down()
 {
 	local TAP="$1"
 
-	sudo ip link set "$TAP" down
-	sudo ip link set "$TAP" promisc off
-	sudo ip link set "$TAP" nomaster
-	sudo ip tuntap del "$TAP" mode tap
+	ip link set "$TAP" down
+	ip link set "$TAP" promisc off
+	ip link set "$TAP" nomaster
+	ip tuntap del "$TAP" mode tap
 }
 
 gen_mac_end() {
@@ -81,8 +82,17 @@ gen_mac_end() {
 }
 
 qvm_start() {
+	local VM=$1
 	VNC_PORT=$(get_vnc_free_port)
 	SSH_PORT=$(get_ssh_free_port)
+	echo $VNC_PORT
+	echo $SSH_PORT
+	mkfifo /tmp/qvm-pipe-guest-$VM.in /tmp/qvm-pipe-guest-$VM.out
+	#exit 0
+	QEMU_CMDLINE=$($QVM_PARSER --get $1)
+	set -x
+	eval $QEMU_CMDLINE
+	exit 0
 
 BR_PUBLIC=qvm-pub-br0
 BR_PRIVATE=qvm-pub-br1
@@ -96,6 +106,7 @@ MAC_PUBLIC=02:01:00${MAC_END}
 MAC_PRIVATE=02:02:00${MAC_END}
 #echo $MAC_PUBLIC
 #echo $MAC_PRIVATE
+set -x
 	bridge_create $BR_PUBLIC
 	bridge_create $BR_PRIVATE
 	tapm_up $TAP_PUBLIC $BR_PUBLIC
@@ -103,29 +114,44 @@ MAC_PRIVATE=02:02:00${MAC_END}
 
 NETWORK_PUBLIC="-device virtio-net-pci,mac=$MAC_PUBLIC,netdev=netdev_public -netdev tap,id=netdev_public,ifname=$TAP_PUBLIC,script=no,vhost=on"
 
-NETWORK_PRIVATE="-device virtio-net-pci,mac=$MAC_PRIVATE,netdev=netdev_private	-netdev tap,id=netdev_private,ifname=$TAP_PRIVATE,script=no,vhost=on"
+NETWORK_PRIVATE="-device virtio-net-pci,mac=$MAC_PRIVATE,netdev=netdev_private -netdev tap,id=netdev_private,ifname=$TAP_PRIVATE,script=no,vhost=on"
 
+# Important MQ mode on !!!
+#-device virtio-net-pci,netdev=dev1,mac=9a:e8:e9:ea:eb:ec,id=net1,vectors=9,mq=on \
+#-netdev tap,id=dev1,vhost=on,script=no,queues=4 \
+#-device virtio-net-pci,netdev=dev2,mac=9a:e8:e9:ea:eb:ed,id=net2,vectors=9,mq=on \
+#-netdev tap,id=dev2,vhost=on,script=no,queues=4 \
 
+# Important MQ mode off !!!
+#		-device virtio-net-pci,netdev=dev1,mac=9a:e8:e9:ea:eb:ec,id=net1,mq=off \
+#		-netdev tap,id=dev1,vhost=on,script=no \
+#		-device virtio-net-pci,netdev=dev2,mac=9a:e8:e9:ea:eb:ec,id=net2,mq=off \
+#		-netdev tap,id=dev2,vhost=on,script=no \
 
-	local VM=$1
 	local FULL_PATH_ROOTFS_IMG=$QVM_DIR/$VM".qcow2"
 
-	mkfifo /tmp/qvm-pipe-guest-$VM.in /tmp/qvm-pipe-guest-$VM.out
 
 	set -x
 	qemu-system-x86_64 -enable-kvm \
+		-machine pc-q35-5.2,kernel-irqchip=split \
+		-device intel-iommu,intremap=on \
 		-boot d \
 		-hda $FULL_PATH_ROOTFS_IMG \
-		-m 1024 \
+		-m 16G \
 		-cpu host \
 		-smp $(nproc) \
 		-device e1000,netdev=user.0 -netdev user,id=user.0,hostfwd=tcp:127.0.0.1:$SSH_PORT-:22 \
 		-serial pipe:/tmp/qvm-pipe-guest-$VM \
-		$NETWORK_PUBLIC \
-		$NETWORK_PRIVATE \
+		-device virtio-net-pci,netdev=dev1,mac=9a:e8:e9:ea:eb:ec,id=net1,vectors=9,mq=on \
+		-netdev tap,id=dev1,vhost=on,script=no,queues=4 \
+		-device virtio-net-pci,netdev=dev2,mac=9a:e8:e9:ea:eb:ed,id=net2,vectors=9,mq=on \
+		-netdev tap,id=dev2,vhost=on,script=no,queues=4 \
 		-daemonize \
 		-vnc $VNC_PORT
 		#-hda deb-10-rootfs.qcow2 \
+		#$NETWORK_PUBLIC \
+		#$NETWORK_PRIVATE \
+
 	set +x
 	echo $? > $result_qvm_file
 }
@@ -152,7 +178,7 @@ if [ -z $QVM_DIR ] ; then
 	qvm_message_box "Error: qvm_dir isn't set properly"
 	exit $LINENO
 fi
-QVM_DIR=`readlink -f ~/qemu/templates`
+#QVM_DIR=`readlink -f ~/qemu/templates`
 #QVM_CONF=`readlink -f ~/.qvm.conf`
 
 #if [ ! -f $QVM_CONF ] ; then 
@@ -161,7 +187,8 @@ QVM_DIR=`readlink -f ~/qemu/templates`
 
 qvm_check_state() {
 	local VM=$1
-	ps_ax=`ps ax | grep qemu | grep $VM | cut -d' ' -f-1 `
+	ps_ax=`ps ax | grep qemu | grep $VM | awk '{print $1}'`
+	#ps_ax=`ps ax | grep qemu | grep $VM | sed "s/^\s*//" | cut -d' ' -f-1 `
 	if [ ! -z $ps_ax ] ; then
 		kill -0 $ps_ax
 		if [ $? -eq 0 ] ; then
@@ -197,12 +224,14 @@ qvm_list() {
 	QVM_LIST=""
 	local CNT=0
 	local TMP_LIST=""
-	for i in $(ls ${QVM_DIR}/*.qcow2) ;
+	$QVM_PARSER --list
+	for i in $($QVM_PARSER --list) ;
+	#for i in $(find ${QVM_DIR} -name "*.qcow2" 2>/dev/null) ;
 	do
 		CNT=$((CNT+1))
-		ENTRY="$(basename $i | cut -d '.' -f 1)"
+		#ENTRY="$(basename $i | cut -d '.' -f 1)"
+		ENTRY="$i"
 		STATE=$(qvm_check_state $ENTRY)
-		echo $STATE
 		#TMP_LIST=${TMP_LIST}printf "%d %s\n" $CNT "$ENTRY"
 		TMP_LIST=${TMP_LIST}$ENTRY" "$STATE" "
 		QVM_LIST=${QVM_LIST}${ENTRY}" "
