@@ -195,7 +195,7 @@ qvm_check_state() {
 		if [ $? -eq 0 ] ; then
 			echo "working"
 		else
-			echo "not responding"
+			echo "not_responding"
 		fi
 	else
 			echo "stopped"
@@ -335,7 +335,8 @@ qvm_action() {
 						fi
 						ssh_port=$(get_vm_ssh_port)
 						echo "ssh_port=$ssh_port"
-						ssh -i ~/.ssh/id_rsa_qvm -p $ssh_port $ssh_user@127.0.0.1 
+						IGNORE_SSH_KNOWN_HOSTS_OPTS="-o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
+						ssh ${IGNORE_SSH_KNOWN_HOSTS_OPTS} -i ~/.ssh/id_rsa_qvm -p $ssh_port $ssh_user@127.0.0.1 
 					else
 						#qvm_message_box "VM "`cat $selected_vm_file | tr '\n' ' '`" isn't running" 
 						exit 1
