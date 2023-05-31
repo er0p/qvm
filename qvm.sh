@@ -3,6 +3,7 @@
 SCRIPTPATH=$(dirname `realpath $0`)
 QVM_PARSER=${SCRIPTPATH}/qvm-conf-parser.py
 
+
 get_ssh_free_port() {
 	ssh_port=""
 	for port in $(seq 20000 20099);
@@ -86,6 +87,17 @@ qvm_start() {
 	local VM=$1
 	VNC_PORT=$(get_vnc_free_port)
 	SSH_PORT=$(get_ssh_free_port)
+	MACADDR_START=$(${QVM_PARSER} --key global mac_addr_start)
+	MACADDR_BASE=$(echo ${VM} | md5sum | cut -c-6 )	
+	MACADDR=()
+	for i in `seq 1 10` ; 
+	do
+	    M=$(printf "%x\n" $(( 0x${MACADDR_BASE} + ${i} )) | sed -r -e 's/[^.]{2}/&:/g' | sed 's/:$//')
+	    M=${MACADDR_START}${M}
+	    echo $M
+	    MACADDR=(${MACADDR[@]} $M)
+	done
+
 	echo $VNC_PORT
 	echo $SSH_PORT
 	mkfifo /tmp/qvm-pipe-guest-$VM.in /tmp/qvm-pipe-guest-$VM.out
@@ -188,7 +200,7 @@ fi
 
 qvm_check_state() {
 	local VM=$1
-	ps_ax=`ps ax | grep qemu | grep $VM | awk '{print $1}'`
+	ps_ax=`ps ax | grep qemu | grep "."$VM | awk '{print $1}'`
 	#ps_ax=`ps ax | grep qemu | grep $VM | sed "s/^\s*//" | cut -d' ' -f-1 `
 	if [ ! -z $ps_ax ] ; then
 		kill -0 $ps_ax
@@ -296,7 +308,8 @@ qvm_action() {
 	local VM=$1
 	$DIALOG --clear --title "qVM action menu" \
 		--menu "Select qVM action to do" 20 51 4 \
-		"attach_ssh"  "ssh to qVM" \
+		"attach_ssh_libvirt"  "ssh to qVM(libvirt default)" \
+		"attach_ssh_hostfwd"  "ssh to qVM (user network)" \
 		"attach_vnc"  "VNCViewer to qVM" \
 		"start"  "start qVM" \
 		"stop" "stop qVM" \
@@ -325,7 +338,21 @@ qvm_action() {
 						qvm_message_box "VM "`cat $selected_vm_file | tr '\n' ' '`" isn't running" 
 					fi
 					;;
-				attach_ssh)
+				attach_ssh_libvirt)
+					if [ "$(qvm_check_state `cat $selected_vm_file`)" = "working" ] ; then
+					    ssh_user=$($QVM_PARSER --keyvalue $VM ssh_user)
+					    VM_NAME=`cat $selected_vm_file`
+					    ssh_ip=$(virsh net-dhcp-leases default | grep $VM_NAME | awk '{print $5}' | cut -d '/' -f 1)
+					    if [ $? -ne 0 ] ; then
+						ssh_user="root"
+					    fi
+					    SSH_APPEND_OPTIONS=$($QVM_PARSER --keyvalue $VM ssh_append_options)
+					    IGNORE_SSH_KNOWN_HOSTS_OPTS="-o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
+					    set -x
+					    ssh ${IGNORE_SSH_KNOWN_HOSTS_OPTS} ${SSH_APPEND_OPTIONS} -o "ForwardX11Trusted yes"  -X -i ~/.ssh/id_rsa_qvm $ssh_user@$ssh_ip
+					fi
+					;;
+				attach_ssh_hostfwd)
 					if [ "$(qvm_check_state `cat $selected_vm_file`)" = "working" ] ; then
 						
 						VM=$(cat $selected_vm_file)
@@ -335,8 +362,9 @@ qvm_action() {
 						fi
 						ssh_port=$(get_vm_ssh_port)
 						echo "ssh_port=$ssh_port"
+						SSH_APPEND_OPTIONS=$($QVM_PARSER --keyvalue $VM ssh_append_options)
 						IGNORE_SSH_KNOWN_HOSTS_OPTS="-o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
-						ssh ${IGNORE_SSH_KNOWN_HOSTS_OPTS} -i ~/.ssh/id_rsa_qvm -p $ssh_port $ssh_user@127.0.0.1 
+						ssh ${IGNORE_SSH_KNOWN_HOSTS_OPTS} ${SSH_APPEND_OPTIONS} -o "ForwardX11Trusted yes"  -X -i ~/.ssh/id_rsa_qvm -p $ssh_port $ssh_user@127.0.0.1 
 					else
 						#qvm_message_box "VM "`cat $selected_vm_file | tr '\n' ' '`" isn't running" 
 						exit 1
