@@ -17,8 +17,9 @@ def print_vm_cmdline(config, vm_name):
     qvm_args=list()
     if vm_name in qvm_sects:
         qvm_args = config.items(vm_name)
-        qvm_args.pop(0) #skip ssh_user
-        qvm_args.pop(0) #skip ssh_append_options
+        #skip ssh_user and ssh_append_options
+        while 'qemu' != qvm_args[0][0]:
+            qvm_args.pop(0) 
         #qemu type MUST be located first in VM section
         qemu_type = qvm_args[0][1]
         qvm_args.pop(0)
