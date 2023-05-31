@@ -48,7 +48,7 @@ def print_value_by_vm_n_key(config, keys):
         value =  config[vm_name][key]
         print(value)
     except KeyError:
-        print("No such keyvalue")
+        #print("No such keyvalue")
         err=errno.ENOENT
     sys.exit(err)
 
